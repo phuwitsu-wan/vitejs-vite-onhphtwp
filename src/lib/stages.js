@@ -1,0 +1,92 @@
+// หาระยะการเจริญเติบโตของพืชในวันที่กำหนด
+//  - ไม้ผลและข้าวไวแสง (stageMode = month): ระยะตายตัวตามเดือน (อาจซ้อนกันได้หลายระยะ)
+//  - ทุเรียน: นับวันจากวันเริ่มรอบ (เดือนตัดแต่งกิ่งหลังเก็บเกี่ยว = ก.ค.)
+//  - พืชไร่/ผัก: ถ้าผู้ใช้ระบุวันปลูก ใช้จำนวนวันหลังปลูก (DAP)
+//                ถ้าไม่ระบุ ใช้ฤดูปลูกจากแผนพัฒนาการเกษตรฯ แล้วรวมทุกระยะที่เป็นไปได้ในจังหวัดช่วงนั้น
+import { CROPS } from '../data/crops.js';
+import { SEASONS } from '../data/seasons.js';
+import { monthConcurrentKeys } from './stageMonth.js';
+
+const DAY = 86400000;
+function toUtc(s) { return Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)); }
+function ymd(t) { return new Date(t).toISOString().slice(0, 10); }
+export function diffDays(a, b) { return Math.round((toUtc(b) - toUtc(a)) / DAY); }
+export function addDays(s, n) { return ymd(toUtc(s) + n * DAY); }
+
+function stageIdxByDap(crop, dap) {
+  let idx = 0;
+  for (let i = 0; i < crop.stages.length; i++) if (dap >= (crop.stages[i].dap || 0)) idx = i;
+  return idx;
+}
+
+function inWindow(m, d, w) {
+  const v = m * 100 + d;
+  const a = w[0] * 100 + w[1];
+  const b = w[2] * 100 + w[3];
+  return a <= b ? v >= a && v <= b : v >= a || v <= b;
+}
+
+// วันปลูกที่เป็นไปได้ทั้งหมด (สุ่มทุก 5 วัน) ที่พืชยังอยู่ในแปลง ณ วันที่ dateStr
+function plausiblePlantings(crop, season, dateStr) {
+  const out = [];
+  const cycle = crop.cycleDays || 120;
+  for (let back = 0; back <= cycle; back += 5) {
+    const p = addDays(dateStr, -back);
+    const m = +p.slice(5, 7);
+    const d = +p.slice(8, 10);
+    for (let k = 0; k < season.windows.length; k++) {
+      if (inWindow(m, d, season.windows[k])) { out.push({ date: p, dap: back, win: season.windows[k][4] }); break; }
+    }
+  }
+  return out;
+}
+
+/**
+ * คืน { keys:[stageKey], labels:[ชื่อระยะ], basis:'month'|'dap'|'season'|'offseason', note }
+ */
+export function stagesOn(cropId, dateStr, plantDate) {
+  const crop = CROPS[cropId];
+  const season = SEASONS[cropId] || {};
+  const m = +dateStr.slice(5, 7);
+  const names = function (keys) {
+    return keys.map(function (k) { const s = crop.stages.find(function (x) { return x.key === k; }); return s ? s.name : k; });
+  };
+
+  if (crop.stageMode === 'month') {
+    const keys = monthConcurrentKeys(crop, m);
+    return { keys: keys, labels: names(keys), basis: 'month', note: 'ระยะตามเดือนของพืชชนิดนี้' };
+  }
+
+  if (cropId === 'durian') {
+    const y = +dateStr.slice(0, 4);
+    let start = y + '-07-01';
+    if (start > dateStr) start = (y - 1) + '-07-01';
+    const dap = diffDays(start, dateStr);
+    const k = crop.stages[stageIdxByDap(crop, dap)].key;
+    return { keys: [k], labels: names([k]), basis: 'month', note: 'นับจากเริ่มรอบการผลิต ก.ค. (หลังเก็บเกี่ยว)' };
+  }
+
+  if (plantDate) {
+    const dap = diffDays(plantDate, dateStr);
+    if (dap < 0) return { keys: [], labels: [], basis: 'offseason', note: 'ยังไม่ถึงวันปลูกที่ระบุ' };
+    if (dap > (crop.cycleDays || 120) + 15) return { keys: [], labels: [], basis: 'offseason', note: 'เลยระยะเก็บเกี่ยวแล้ว' };
+    const k = crop.stages[stageIdxByDap(crop, dap)].key;
+    return { keys: [k], labels: names([k]), basis: 'dap', dap: dap, note: 'อายุพืช ' + dap + ' วันหลังปลูก' };
+  }
+
+  if (!season.windows) return { keys: crop.stages.map(function (s) { return s.key; }), labels: [], basis: 'season', note: 'ไม่มีข้อมูลฤดูปลูก ใช้ทุกระยะ' };
+  const pl = plausiblePlantings(crop, season, dateStr);
+  if (!pl.length) return { keys: [], labels: [], basis: 'offseason', note: 'นอกฤดูปลูกตามแผนพัฒนาการเกษตรฯ' };
+  const keys = [];
+  const wins = [];
+  pl.forEach(function (p) {
+    const k = crop.stages[stageIdxByDap(crop, p.dap)].key;
+    if (keys.indexOf(k) < 0) keys.push(k);
+    if (wins.indexOf(p.win) < 0) wins.push(p.win);
+  });
+  // เรียงตามลำดับระยะ
+  keys.sort(function (a, b) {
+    return crop.stages.findIndex(function (s) { return s.key === a; }) - crop.stages.findIndex(function (s) { return s.key === b; });
+  });
+  return { keys: keys, labels: names(keys), basis: 'season', note: 'ระยะที่เป็นไปได้ในจังหวัดช่วงนี้ (' + wins.join(', ') + ')' };
+}
