@@ -30,6 +30,19 @@ export default function MapView(props) {
     };
   }
 
+  function fitCurrent(animate) {
+    const m = map.current;
+    if (!m || !tLayer.current) return;
+    const d = cb.current.district;
+    let b = tLayer.current.getBounds();
+    if (d) {
+      const db = L.latLngBounds([]);
+      tLayer.current.eachLayer(function (l) { if (l.feature.properties.amp === d) db.extend(l.getBounds()); });
+      if (db.isValid()) b = db;
+    }
+    m.fitBounds(b, { padding: d ? [20, 20] : [10, 10], animate: animate });
+  }
+
   useEffect(function () {
     const m = L.map(box.current, { zoomControl: true, attributionControl: true, minZoom: 7, maxZoom: 14, zoomSnap: 0.25 });
     map.current = m;
@@ -57,7 +70,7 @@ export default function MapView(props) {
         .bindTooltip('จุดเสี่ยงน้ำท่วม (แผนฯ): ' + p.name);
     }));
     m.fitBounds(tLayer.current.getBounds(), { padding: [10, 10] });
-    const ro = new ResizeObserver(function () { m.invalidateSize({ pan: false }); if (!cb.current.district) m.fitBounds(tLayer.current.getBounds(), { padding: [10, 10], animate: false }); });
+    const ro = new ResizeObserver(function () { m.invalidateSize({ pan: false }); fitCurrent(false); });
     ro.observe(box.current);
     return function () { ro.disconnect(); m.remove(); };
   }, []);
@@ -85,17 +98,7 @@ export default function MapView(props) {
     if (showFlood) floodLayer.current.addTo(m); else floodLayer.current.remove();
   }, [showFlood]);
 
-  useEffect(function () {
-    const m = map.current;
-    if (!m || !tLayer.current) return;
-    if (district) {
-      const b = L.latLngBounds([]);
-      tLayer.current.eachLayer(function (l) { if (l.feature.properties.amp === district) b.extend(l.getBounds()); });
-      if (b.isValid()) m.fitBounds(b, { padding: [20, 20] });
-    } else {
-      m.fitBounds(tLayer.current.getBounds(), { padding: [10, 10] });
-    }
-  }, [district]);
+  useEffect(function () { fitCurrent(true); }, [district]);
 
   useEffect(function () {
     const m = map.current;

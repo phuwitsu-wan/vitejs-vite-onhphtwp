@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import tambonGeo from './data/tambons.json';
 import { CROPS } from './data/crops.js';
 import { SEASONS, CROP_GROUPS } from './data/seasons.js';
+import { cropsOfDistrict } from './data/districtCrops.js';
 import { loadWeather } from './lib/weather.js';
 import { demoWeather } from './lib/demo.js';
 import { todayStr } from './lib/wxparse.js';
@@ -15,7 +16,6 @@ const TAMBONS = tambonGeo.features.map(function (f) { return f.properties; });
 const BY_ID = {};
 TAMBONS.forEach(function (t) { BY_ID[t.id] = t; });
 const DISTRICTS = Array.from(new Set(TAMBONS.map(function (t) { return t.amp; }))).sort(function (a, b) { return a.localeCompare(b, 'th'); });
-const ALL_CROPS = Object.keys(CROPS);
 const LEVELS = ['high', 'alert', 'watch', 'none'];
 
 function load(k, d) { try { const v = localStorage.getItem('pbn-' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } }
@@ -38,7 +38,7 @@ function findTambon(lat, lon) {
 }
 
 export default function App() {
-  const [mode, setMode] = useState(load('mode', 'crop'));       // crop | overview | flood | dry
+  const [mode, setMode] = useState(function () { const m = load('mode', 'crop'); return m === 'overview' ? 'area' : m; });  // crop | area | flood | dry
   const [cropId, setCropId] = useState(load('crop', 'maize'));
   const [pest, setPest] = useState('all');
   const [plantDates, setPlantDates] = useState(load('plant', {}));
@@ -74,7 +74,7 @@ export default function App() {
       const s = data[t.id];
       if (!s) return;
       if (mode === 'crop') out[t.id] = assessCrop(cropId, s, today, { plantDate: plantDate });
-      else if (mode === 'overview') out[t.id] = assessOverview(ALL_CROPS, s, today);
+      else if (mode === 'area') out[t.id] = assessOverview(cropsOfDistrict(t.amp), s, today);
       else out[t.id] = assessHazard(mode, s, today);
     });
     return out;
@@ -119,12 +119,32 @@ export default function App() {
     return TAMBONS.filter(function (t) { return results[t.id] && (!district || t.amp === district); })
       .map(function (t) {
         const r = results[t.id];
-        const n = mode === 'overview' ? r.hits : (r.items || []).filter(function (i) { return LEVEL_RANK[i.level] >= 2; }).length;
+        const n = mode === 'area' ? r.hits : (r.items || []).filter(function (i) { return LEVEL_RANK[i.level] >= 2; }).length;
         return { t: t, level: levels[t.id], n: n };
       })
       .sort(function (a, b) { return LEVEL_RANK[b.level] - LEVEL_RANK[a.level] || b.n - a.n; })
       .slice(0, 12);
   }, [results, levels, district, mode]);
+
+  // มุมมองตามพื้นที่: สรุปรายอำเภอ และรายพืชในอำเภอที่เลือก
+  const areaSummary = useMemo(function () {
+    if (!results || mode !== 'area') return null;
+    const byAmp = {};
+    TAMBONS.forEach(function (t) {
+      const r = results[t.id];
+      if (!r) return;
+      const a = byAmp[t.amp] || (byAmp[t.amp] = { amp: t.amp, level: 'none', n: 0, crops: {} });
+      if (LEVEL_RANK[r.level] > LEVEL_RANK[a.level]) a.level = r.level;
+      a.n++;
+      r.per.forEach(function (p) {
+        const c = a.crops[p.crop] || (a.crops[p.crop] = { crop: p.crop, hit: 0, level: 'none', pests: {} });
+        if (LEVEL_RANK[p.res.level] >= 2) c.hit++;
+        if (LEVEL_RANK[p.res.level] > LEVEL_RANK[c.level]) c.level = p.res.level;
+        p.res.items.forEach(function (it) { if (LEVEL_RANK[it.level] >= 2) c.pests[it.name] = (c.pests[it.name] || 0) + 1; });
+      });
+    });
+    return byAmp;
+  }, [results, mode]);
 
   const crop = CROPS[cropId];
   const season = SEASONS[cropId] || {};
@@ -138,7 +158,7 @@ export default function App() {
       const its = r.items.filter(function (i) { return LEVEL_RANK[i.level] >= 2; }).slice(0, 3).map(function (i) { return i.name; });
       return its.length ? '<br>' + its.join('<br>') : '';
     }
-    if (mode === 'overview') return '<br>พืชที่ถึงเกณฑ์แจ้งเตือน ' + r.hits + ' ชนิด';
+    if (mode === 'area') return '<br>พืชในพื้นที่ที่ถึงเกณฑ์แจ้งเตือน ' + r.hits + ' จาก ' + r.per.length + ' ชนิด';
     return '';
   }
 
@@ -179,9 +199,10 @@ export default function App() {
       )}
 
       <div className="layout">
+        <div className="left">
         <section className="ctrl" aria-label="ตัวเลือก">
           <div className="tabs" role="tablist">
-            {[['crop', 'รายพืช'], ['overview', 'ภาพรวม 17 พืช'], ['flood', 'ฝนหนัก/น้ำท่วม'], ['dry', 'ฝนทิ้งช่วง/แล้ง']].map(function (t) {
+            {[['crop', 'รายพืช'], ['area', 'ตามพื้นที่'], ['flood', 'ฝนหนัก/น้ำท่วม'], ['dry', 'ฝนทิ้งช่วง/แล้ง']].map(function (t) {
               return <button key={t[0]} role="tab" aria-selected={mode === t[0]} className={mode === t[0] ? 'on' : ''} onClick={function () { setMode(t[0]); }}>{t[1]}</button>;
             })}
           </div>
@@ -208,6 +229,12 @@ export default function App() {
                   {rulesFor(cropId).filter(function (r) { return r.type !== 'scout'; }).map(function (r) { return <option key={r.id} value={r.id}>{r.name}</option>; })}
                 </select>
               </label>
+            </div>
+          )}
+
+          {mode === 'area' && (
+            <div className="card">
+              <div className="muted small">แสดงความเสี่ยงเฉพาะพืชที่ปลูกในแต่ละอำเภอ (แก้รายการได้ที่ src/data/districtCrops.js)</div>
             </div>
           )}
 
@@ -256,6 +283,49 @@ export default function App() {
             </div>
           )}
 
+          {mode === 'area' && areaSummary && !district && (
+            <div className="card">
+              <h3>สรุปรายอำเภอ</h3>
+              <ol className="rank">
+                {DISTRICTS.map(function (d) {
+                  const a = areaSummary[d];
+                  if (!a) return null;
+                  const hit = Object.values(a.crops).filter(function (c) { return c.hit > 0; }).length;
+                  return (
+                    <li key={d}>
+                      <button onClick={function () { setDistrict(d); }}>
+                        <i style={{ background: LEVEL_COLOR[a.level] }} />
+                        <span>อ.{d}</span>
+                        <span className="cnt">{hit}/{cropsOfDistrict(d).length} พืชเข้าเกณฑ์</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ol>
+              <div className="muted small">แตะชื่ออำเภอเพื่อดูรายพืช</div>
+            </div>
+          )}
+
+          {mode === 'area' && areaSummary && district && areaSummary[district] && (
+            <div className="card">
+              <h3>พืชใน อ.{district} สัปดาห์นี้</h3>
+              <ul className="toplist">
+                {Object.values(areaSummary[district].crops).sort(function (a, b) { return LEVEL_RANK[b.level] - LEVEL_RANK[a.level] || b.hit - a.hit; }).map(function (c) {
+                  const pests = Object.entries(c.pests).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 2).map(function (x) { return x[0]; });
+                  return (
+                    <li key={c.crop}>
+                      <button onClick={function () { setCropId(c.crop); setMode('crop'); }}>
+                        <span>{CROPS[c.crop].emoji} {CROPS[c.crop].name}{pests.length ? <span className="muted small"><br />{pests.join(' · ')}</span> : null}</span>
+                        <span className="cnt"><LevelBadge level={c.level} /><br />{c.hit}/{areaSummary[district].n} ต.</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="muted small">แตะชื่อพืชเพื่อดูแผนที่และวิธีจัดการรายพืช</div>
+            </div>
+          )}
+
           {ranking.length > 0 && (
             <div className="card">
               <h3>ตำบลที่ควรลงพื้นที่ก่อน</h3>
@@ -266,7 +336,7 @@ export default function App() {
                       <button onClick={function () { setSel(r.t.id); }}>
                         <i style={{ background: LEVEL_COLOR[r.level] }} />
                         <span>ต.{r.t.tam} <span className="muted">อ.{r.t.amp}</span></span>
-                        <span className="cnt">{r.n > 0 ? r.n + (mode === 'overview' ? ' พืช' : ' รายการ') : ''}</span>
+                        <span className="cnt">{r.n > 0 ? r.n + (mode === 'area' ? ' พืช' : ' รายการ') : ''}</span>
                       </button>
                     </li>
                   );
@@ -285,10 +355,11 @@ export default function App() {
             </div>
           )}
         </aside>
+        </div>
 
         <main className="main">
           <div className="map-wrap">
-            <MapView levels={levels} selected={sel} onSelect={setSel} district={district} showBase={showBase} showFlood={showFlood && (mode === 'flood' || mode === 'overview')} labelFor={labelFor} />
+            <MapView levels={levels} selected={sel} onSelect={setSel} district={district} showBase={showBase} showFlood={showFlood && (mode === 'flood' || mode === 'area')} labelFor={labelFor} />
             {wx.status === 'loading' && <div className="map-loading">กำลังคำนวณความเสี่ยง 117 ตำบล…</div>}
             <div className="map-legend">
               {LEVELS.map(function (l) { return <span key={l}><i style={{ background: LEVEL_COLOR[l] }} />{LEVEL_LABEL[l]}</span>; })}

@@ -1,6 +1,7 @@
 // ประเมินความเสี่ยงโรคและแมลงรายตำบล ใช้เกณฑ์ ALERT_RULES ชุดเดียวกับแอปปฏิทินเพาะปลูก
 // ต่างจากแอปเดิมตรงที่ประเมินทุกวันตั้งแต่วันนี้ถึงอีก 6 วันข้างหน้า (ข้อมูลพยากรณ์) แล้วสรุปเป็นรายสัปดาห์
-import { ALERT_RULES, CONF_LABEL, TRIGGER_LABEL } from '../data/alertRules.js';
+import { CONF_LABEL, TRIGGER_LABEL } from '../data/alertRules.js';
+import { RULES } from '../data/rules.js';
 import { stagesOn, diffDays } from './stages.js';
 
 export const LEVEL_RANK = { none: 0, watch: 1, alert: 2, high: 3 };
@@ -65,7 +66,7 @@ function levelAt(series, idx, rule) {
 }
 
 const RULES_BY_CROP = {};
-ALERT_RULES.forEach(function (r) { (RULES_BY_CROP[r.crop] || (RULES_BY_CROP[r.crop] = [])).push(r); });
+RULES.forEach(function (r) { (RULES_BY_CROP[r.crop] || (RULES_BY_CROP[r.crop] = [])).push(r); });
 export function rulesFor(cropId) { return RULES_BY_CROP[cropId] || []; }
 
 function stageOk(rule, keys) {

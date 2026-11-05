@@ -40,9 +40,10 @@ a, .link { color: #1d6fb8; }
 .banner { padding: 10px 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .banner.err { background: #fdecea; color: #7a1f1f; }
 
-.layout { flex: none; display: grid; grid-template-columns: 330px 1fr; grid-template-rows: auto minmax(0, 1fr); grid-template-areas: 'ctrl main' 'side main'; min-height: 0; height: calc(100vh - 66px); }
-.ctrl { grid-area: ctrl; padding: 12px 12px 0; border-right: 1px solid var(--line); }
-.side { grid-area: side; padding: 0 12px 12px; overflow-y: auto; border-right: 1px solid var(--line); min-height: 0; }
+.layout { flex: none; display: grid; grid-template-columns: 330px 1fr; grid-template-rows: minmax(0, 1fr); grid-template-areas: 'left main'; min-height: 0; height: calc(100vh - 66px); }
+.left { grid-area: left; overflow-y: auto; min-height: 0; border-right: 1px solid var(--line); }
+.ctrl { padding: 12px 12px 0; }
+.side { padding: 0 12px 12px; }
 .main { grid-area: main; }
 .main { display: grid; grid-template-columns: 1fr minmax(320px, 400px); grid-template-rows: minmax(0, 1fr); min-height: 0; height: 100%; overflow: hidden; position: relative; }
 .ctrl .card:last-child { margin-bottom: 10px; }
@@ -122,8 +123,9 @@ ul.ov li button { width: 100%; display: flex; justify-content: space-between; ga
 
 @media (max-width: 980px) {
   .layout { grid-template-columns: 1fr; grid-template-rows: auto auto auto; grid-template-areas: 'ctrl' 'main' 'side'; height: auto; }
-  .ctrl { border-right: 0; padding-bottom: 0; }
-  .side { border-right: 0; padding-top: 4px; overflow: visible; }
+  .left { display: contents; }
+  .ctrl { grid-area: ctrl; padding-bottom: 0; }
+  .side { grid-area: side; padding-top: 4px; }
   .main { grid-template-columns: 1fr; grid-template-rows: auto; height: auto; overflow: visible; }
   .ctrl .card { margin-bottom: 8px; }
   .map-wrap { min-height: 58vh; }

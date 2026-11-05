@@ -103,10 +103,10 @@ export default function TambonPanel(props) {
         </>
       )}
 
-      {mode === 'overview' && result && (
+      {mode === 'area' && result && (
         <>
-          <h3>ภาพรวมทุกพืช สัปดาห์นี้</h3>
-          <p className="muted">แตะชื่อพืชเพื่อดูรายละเอียด ถ้าในตำบลนี้ไม่ได้ปลูกพืชนั้น ให้ข้ามได้</p>
+          <h3>พืชในพื้นที่ อ.{tambon.amp} สัปดาห์นี้</h3>
+          <p className="muted">แตะชื่อพืชเพื่อดูรายละเอียดและวิธีจัดการ</p>
           <ul className="ov">
             {result.per.slice().sort(function (a, b) { return rank(b.res.level) - rank(a.res.level); }).map(function (p) {
               const c = CROPS[p.crop];

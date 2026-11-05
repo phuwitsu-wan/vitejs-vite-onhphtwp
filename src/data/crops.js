@@ -339,13 +339,14 @@ function avocadoTasks(p, m) {
     perennial: true, tbase: 15, tcap: 36, cycleDays: 365, stageMode: 'month',
     anchorLabel: 'วันเริ่มรอบการผลิต หลังเก็บเกี่ยวหรือตัดแต่งกิ่ง',
     stages: [
+      // ช่วงเดือนตามไฟล์ปฏิทินมะขามหวานเท่าทันสภาพภูมิอากาศ (Excel) ระยะซ้อนกันได้
       { key: 'recover', name: 'ฟื้นฟูหลังเก็บเกี่ยว', months: [2, 3], gdd: 0, dap: 0, kc: 0.60 },
-      { key: 'flush', name: 'แตกใบอ่อน–ออกดอก', months: [4], gdd: 400, dap: 50, kc: 0.75 },
-      { key: 'youngpod', name: 'ติดฝักอ่อน', months: [5, 6, 7], gdd: 900, dap: 90, kc: 0.90 },
+      { key: 'flush', name: 'แตกใบอ่อน–ออกดอก', months: [3, 4], gdd: 400, dap: 50, kc: 0.75 },
+      { key: 'youngpod', name: 'ติดฝักอ่อน สร้างอาหาร', months: [5, 6, 7], gdd: 900, dap: 90, kc: 0.90 },
       { key: 'storing', name: 'สะสมอาหาร', months: [8, 9, 10], gdd: 1800, dap: 180, kc: 0.90 },
-      { key: 'earlyharvest', name: 'เริ่มเก็บเกี่ยว', months: [11], gdd: 2600, dap: 270, kc: 0.80 },
-      { key: 'expand', name: 'ขยายฝัก', months: [12], gdd: 3000, dap: 300, kc: 0.80 },
-      { key: 'harvest', name: 'เก็บเกี่ยว', months: [1], gdd: 3400, dap: 330, kc: 0.70 }
+      { key: 'earlyharvest', name: 'เริ่มเก็บเกี่ยว (ฝักหมู)', months: [11, 12], gdd: 2600, dap: 270, kc: 0.80 },
+      { key: 'expand', name: 'ขยายฝัก', months: [12, 1], gdd: 3000, dap: 300, kc: 0.80 },
+      { key: 'harvest', name: 'เก็บเกี่ยว', months: [1, 2], gdd: 3400, dap: 330, kc: 0.70 }
     ],
     tasks: [
       { id: 'tm-f1', type: 'fertilizer', title: 'ปุ๋ยฟื้นต้น 15-15-15 และปุ๋ยคอก', trigger: { by: 'month', value: 2, day: 15 }, rainSensitive: true, detail: '1–2 กก./ต้น ร่วมปุ๋ยคอก 20–30 กก.' },
