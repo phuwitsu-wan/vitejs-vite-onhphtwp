@@ -3,6 +3,7 @@ import tambonGeo from './data/tambons.json';
 import { CROPS } from './data/crops.js';
 import { SEASONS, CROP_GROUPS } from './data/seasons.js';
 import { cropsOfDistrict } from './data/districtCrops.js';
+import { KIND_ICON } from './data/rules.js';
 import { loadWeather } from './lib/weather.js';
 import { demoWeather } from './lib/demo.js';
 import { todayStr } from './lib/wxparse.js';
@@ -11,6 +12,7 @@ import { assessHazard } from './lib/hazards.js';
 import { thDate, thDateTime, fmtNum } from './lib/format.js';
 import MapView, { LEVEL_COLOR } from './components/MapView.jsx';
 import TambonPanel, { LevelBadge } from './components/TambonPanel.jsx';
+import OnePage from './components/OnePage.jsx';
 
 const TAMBONS = tambonGeo.features.map(function (f) { return f.properties; });
 const BY_ID = {};
@@ -48,6 +50,7 @@ export default function App() {
   const [showFlood, setShowFlood] = useState(true);
   const [wx, setWx] = useState({ status: 'loading' });
   const [geoMsg, setGeoMsg] = useState('');
+  const [report, setReport] = useState(false);
 
   useEffect(function () { save('mode', mode); save('crop', cropId); save('sel', sel); save('base', showBase); save('plant', plantDates); }, [mode, cropId, sel, showBase, plantDates]);
   useEffect(function () { setPest('all'); }, [cropId, mode]);
@@ -186,6 +189,7 @@ export default function App() {
           {wx.status === 'loading' && <span className="pill">กำลังโหลดข้อมูลอากาศ…</span>}
           {wx.status === 'ok' && wx.source !== 'demo' && <span className="pill ok">ข้อมูลอากาศ {thDateTime(wx.fetchedAt)}</span>}
           {wx.status === 'ok' && wx.source === 'demo' && <span className="pill warn">โหมดสาธิต: ข้อมูลอากาศจำลอง ไม่ใช่ข้อมูลจริง</span>}
+          <button className="btn report-btn" onClick={function () { setReport(true); }} disabled={wx.status !== 'ok'}>📄 รายงานหน้าเดียว</button>
           <button className="btn ghost" onClick={function () { fetchWx(true); }} disabled={wx.status === 'loading'}>รีเฟรช</button>
         </div>
       </header>
@@ -267,12 +271,13 @@ export default function App() {
           {mode === 'crop' && topPests.length > 0 && (
             <div className="card">
               <h3>สัปดาห์นี้ควรเฝ้าระวัง</h3>
+              <div className="muted small">🐛 แมลง · 🦠 โรค · 🌱 สภาพแวดล้อมต่อการเจริญเติบโต</div>
               <ul className="toplist">
                 {topPests.slice(0, 8).map(function (p) {
                   return (
                     <li key={p.id}>
                       <button className={pest === p.id ? 'on' : ''} onClick={function () { setPest(pest === p.id ? 'all' : p.id); }}>
-                        <span>{p.kind === 'disease' ? '🦠' : '🐛'} {p.name}</span>
+                        <span>{KIND_ICON[p.kind] || '•'} {p.name}</span>
                         <span className="cnt">{p.n ? p.n + ' ตำบล' : 'เฝ้าระวัง ' + p.watch}</span>
                       </button>
                     </li>
@@ -375,6 +380,10 @@ export default function App() {
           {!selT && results && <div className="hint">แตะตำบลบนแผนที่เพื่อดูโรคและแมลงที่ต้องเฝ้าระวัง พยากรณ์อากาศ และวิธีจัดการ</div>}
         </main>
       </div>
+
+      {report && data && (
+        <OnePage data={data} today={today} fetchedAt={wx.fetchedAt} source={wx.source} initialDistrict={district} onClose={function () { setReport(false); }} />
+      )}
 
       <footer className="foot">
         <details>

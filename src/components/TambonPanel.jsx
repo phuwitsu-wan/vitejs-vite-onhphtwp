@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { CROPS } from '../data/crops.js';
 import { SEASONS } from '../data/seasons.js';
+import { KIND_LABEL } from '../data/rules.js';
 import { LEVEL_LABEL } from '../lib/risk.js';
 import { LEVEL_COLOR } from './MapView.jsx';
 import { thDate, thDay } from '../lib/format.js';
@@ -22,7 +23,7 @@ function RiskCard({ it, today }) {
       <button className="risk-head" onClick={function () { setOpen(!open); }} aria-expanded={open}>
         <LevelBadge level={it.level} />
         <span className="risk-name">{it.name}</span>
-        <span className="risk-kind">{it.kind === 'pest' ? 'แมลง/สัตว์' : it.kind === 'disease' ? 'โรค' : 'ภัย'}</span>
+        <span className="risk-kind">{KIND_LABEL[it.kind] || ''}</span>
       </button>
       <div className="risk-when">{when(it, today)}</div>
       {it.detail && <div className="risk-detail">{it.detail}</div>}
