@@ -11,6 +11,7 @@ import { todayStr } from './lib/wxparse.js';
 import { assessCrop, assessOverview, LEVEL_RANK, LEVEL_LABEL, rulesFor } from './lib/risk.js';
 import { assessHazard } from './lib/hazards.js';
 import { thDate, thDateTime, fmtNum } from './lib/format.js';
+import { stagesOn } from './lib/stages.js';
 import MapView, { LEVEL_COLOR } from './components/MapView.jsx';
 import TambonPanel, { LevelBadge } from './components/TambonPanel.jsx';
 import OnePage from './components/OnePage.jsx';
@@ -81,8 +82,8 @@ export default function App() {
       const s = data[t.id];
       if (!s) return;
       const fl = FLAGS[t.id];
-      if (mode === 'crop') out[t.id] = assessCrop(cropId, s, today, { plantDate: plantDate, soilFlags: fl });
-      else if (mode === 'area') out[t.id] = assessOverview(cropsOfDistrict(t.amp), s, today, { soilFlags: fl });
+      if (mode === 'crop') out[t.id] = assessCrop(cropId, s, today, { plantDate: plantDate, soilFlags: fl, amp: t.amp });
+      else if (mode === 'area') out[t.id] = assessOverview(cropsOfDistrict(t.amp), s, today, { soilFlags: fl, amp: t.amp });
       else if (mode === 'flood' || mode === 'dry') out[t.id] = assessHazard(mode, s, today, fl);
     });
     return out;
@@ -164,7 +165,7 @@ export default function App() {
   const crop = CROPS[cropId];
   const season = SEASONS[cropId] || {};
   const selT = sel ? BY_ID[sel] : null;
-  const anyStage = results && mode === 'crop' ? results[TAMBONS[0].id] && results[TAMBONS[0].id].stage : null;
+  const anyStage = mode === 'crop' ? stagesOn(cropId, today, plantDate, district || null) : null;
 
   function labelFor(id) {
     if (mode === 'soil') {
@@ -239,8 +240,8 @@ export default function App() {
               </label>
               {anyStage && (
                 <div className="stage-sum">
-                  <div><b>ระยะพืชช่วงนี้:</b> {anyStage.labels.length ? anyStage.labels.join(', ') : 'นอกฤดูปลูก'}</div>
-                  <div className="muted">{plantDate ? 'ตามวันปลูกที่ระบุ ' + thDate(plantDate, true) : anyStage.note}</div>
+                  <div><b>ระยะพืชช่วงนี้{district ? ' (อ.' + district + ')' : ''}:</b> {anyStage.labels.length ? (anyStage.shares ? anyStage.labels[0] + ' (ระยะหลัก)' + (anyStage.labels.length > 1 ? ', ' + anyStage.labels.slice(1).join(', ') : '') : anyStage.labels.join(', ')) : 'นอกฤดูปลูก'}</div>
+                  <div className="muted">{plantDate ? 'ตามวันปลูกที่ระบุ ' + thDate(plantDate, true) : anyStage.shares ? 'คำนวณจากช่วงวันปลูกจริงของ' + (district ? 'อำเภอ' : 'จังหวัด') : anyStage.note}</div>
                   {season.focus && <div className="muted">แหล่งปลูกหลัก: อ.{season.focus.join(', อ.')}</div>}
                 </div>
               )}

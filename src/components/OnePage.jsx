@@ -1,5 +1,5 @@
 // รายงานสรุปหน้าเดียว (One page) เลือกพื้นที่ พืช และประเภทข้อมูล แล้วพิมพ์/บันทึก PDF หรือคัดลอกเป็นข้อความ
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import tambonGeo from '../data/tambons.json';
 import { CROPS } from '../data/crops.js';
 import { CROP_GROUPS } from '../data/seasons.js';
@@ -34,7 +34,7 @@ function maxLv(a, b) { return LEVEL_RANK[a] >= LEVEL_RANK[b] ? a : b; }
 function avg(a) { return a.length ? a.reduce(function (s, x) { return s + x; }, 0) / a.length : null; }
 
 // แผนที่ SVG (ไม่ต้องใช้ภาพพื้นหลัง จึงพิมพ์ได้คมชัด)
-function MapSvg({ feats, levels }) {
+function MapSvg({ feats, levels, labels }) {
   let minX = 999, maxX = -999, minY = 999, maxY = -999;
   feats.forEach(function (f) {
     const polys = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
@@ -50,7 +50,14 @@ function MapSvg({ feats, levels }) {
       {feats.map(function (f) {
         const polys = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
         const d = polys.map(function (p) { return p.map(function (r) { return 'M' + r.map(pt).join('L') + 'Z'; }).join(''); }).join('');
-        return <path key={f.properties.id} d={d} fill={LEVEL_COLOR[levels[f.properties.id] || 'none']} stroke="#fff" strokeWidth="0.6"><title>{'ต.' + f.properties.tam}</title></path>;
+        return <path key={f.properties.id} d={d} fill={LEVEL_COLOR[levels[f.properties.id] || 'none']} stroke="#fff" strokeWidth={labels ? 1.2 : 0.6}><title>{'ต.' + f.properties.tam}</title></path>;
+      })}
+      {labels && feats.map(function (f) {
+        const xy = pt([f.properties.lon, f.properties.lat]).split(',');
+        const fs = 8.5;
+        return (
+          <text key={'l' + f.properties.id} x={xy[0]} y={xy[1]} textAnchor="middle" dominantBaseline="central" className="op-tlabel" style={{ fontSize: fs + 'px' }}>{f.properties.tam}</text>
+        );
       })}
     </svg>
   );
@@ -62,6 +69,7 @@ export default function OnePage(props) {
   const [crops, setCrops] = useState(load('crops', []));
   const [sec, setSec] = useState(Object.assign({}, DEFAULT_SECTIONS, load('sec', {})));
   const [msg, setMsg] = useState('');
+  const pageRef = useRef(null);
   const selCrops = crops.length ? crops : (district ? cropsOfDistrict(district) : ['rice', 'maize', 'cassava', 'sugarcane', 'mungbean', 'tamarind']);
 
   function setCropsSave(v) { setCrops(v); save('crops', v); }
@@ -80,7 +88,7 @@ export default function OnePage(props) {
       const agg = {};
       let stage = null;
       tams.forEach(function (t) {
-        const r = assessCrop(cid, data[t.id], today, { soilFlags: soilFlags(soilOf(t.id)) });
+        const r = assessCrop(cid, data[t.id], today, { soilFlags: soilFlags(soilOf(t.id)), amp: t.amp });
         if (!stage) stage = r.stage;
         r.items.forEach(function (it) {
           if (kinds.indexOf(it.kind) < 0) return;
@@ -140,6 +148,16 @@ export default function OnePage(props) {
     const topGroups = Object.keys(grp).map(function (k) { return [k, grp[k] / (aw || 1)]; }).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 5);
     return { soil: sw, topGroups: topGroups, tams: tams, levels: levels, perCrop: perCrop, days: days, wetT: wetT, wetV: wetV, prio: prio, flood: hz(flood), dry: hz(dry), score: score };
   }, [data, feats, today, selCrops.join(','), kinds.join(','), sec.flood, sec.dry]);
+
+  // ย่อให้พอดีกระดาษ A4 หนึ่งหน้าเมื่อพิมพ์ (กรณีเลือกพืชหลายชนิด)
+  useEffect(function () {
+    const el = pageRef.current;
+    if (!el) return;
+    const a4 = 297 * 96 / 25.4;
+    const h = el.scrollHeight;
+    const fit = h > a4 ? Math.max(0.55, (a4 - 4) / h) : 1;
+    el.style.setProperty('--fit', fit.toFixed(3));
+  });
 
   const scope = district ? 'อ.' + district : 'ทั้งจังหวัด (11 อำเภอ 117 ตำบล)';
   const end = addDays(today, 6);
@@ -219,19 +237,20 @@ export default function OnePage(props) {
       </div>
 
       {rep && (
-        <article className="op-page">
+        <article className="op-page" ref={pageRef}>
           <header className="op-head">
             <div>
-              <h1>สรุปเฝ้าระวังโรคและแมลง จังหวัดเพชรบูรณ์</h1>
-              <div>พื้นที่: <b>{scope}</b> · ช่วงวันที่ {thDate(today)}–{thDate(end, true)}</div>
+              <div className="op-kicker">สรุปเฝ้าระวังโรค แมลง และสภาพแวดล้อม · ช่วงวันที่ {thDate(today)}–{thDate(end, true)}</div>
+              <h1 className="op-area">{district ? 'อำเภอ' + district : 'จังหวัดเพชรบูรณ์'}</h1>
+              {district ? <div className="op-sub">จังหวัดเพชรบูรณ์ · {rep.tams.length} ตำบล</div> : <div className="op-sub">11 อำเภอ 117 ตำบล</div>}
             </div>
             <div className="op-meta">ข้อมูลอากาศ {source === 'demo' ? 'จำลอง (โหมดสาธิต)' : thDateTime(fetchedAt)}<br />พืช {selCrops.length} ชนิด · {rep.tams.length} ตำบล</div>
           </header>
 
-          <div className="op-row">
+          <div className={district ? "op-row op-row-amp" : "op-row"}>
             {sec.map && (
               <section className="op-mapbox">
-                <MapSvg feats={feats} levels={rep.levels} />
+                <MapSvg feats={feats} levels={rep.levels} labels={!!district} />
                 <div className="op-legend">{['high', 'alert', 'watch', 'none'].map(function (l) { return <span key={l}><i style={{ background: LEVEL_COLOR[l] }} />{LEVEL_LABEL[l]}</span>; })}</div>
                 <div className="op-note">ระดับสูงสุดของข้อมูลที่เลือกในแต่ละตำบล</div>
               </section>
@@ -292,7 +311,7 @@ export default function OnePage(props) {
                 <thead><tr><th style={{ width: '22%' }}>พืช / ระยะ</th><th>รายการที่ต้องเฝ้าระวัง (จำนวนตำบลที่ถึงเกณฑ์แจ้งเตือน)</th>{sec.actions && <th style={{ width: '30%' }}>คำแนะนำหลัก</th>}</tr></thead>
                 <tbody>
                   {rep.perCrop.map(function (pc) {
-                    const its = pc.items.slice(0, 4);
+                    const its = pc.items.slice(0, rep.perCrop.length > 6 ? 3 : 4);
                     const top = pc.items.find(function (i) { return LEVEL_RANK[i.level] >= 2; });
                     return (
                       <tr key={pc.crop}>

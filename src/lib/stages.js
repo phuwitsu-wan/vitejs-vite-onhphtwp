@@ -6,6 +6,9 @@
 import { CROPS } from '../data/crops.js';
 import { SEASONS } from '../data/seasons.js';
 import { monthConcurrentKeys } from './stageMonth.js';
+import { PLANTING } from '../data/plantingCalendar.js';
+
+export const MINOR_SHARE = 0.15;   // ระยะที่มีแปลงน้อยกว่านี้ เตือนได้สูงสุดแค่ "เฝ้าระวัง"
 
 const DAY = 86400000;
 function toUtc(s) { return Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)); }
@@ -41,10 +44,30 @@ function plausiblePlantings(crop, season, dateStr) {
   return out;
 }
 
+const MDAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+// สัดส่วนแปลงในแต่ละระยะ จากน้ำหนักการปลูกรายเดือน (ทะเบียนเกษตรกรของจังหวัด)
+function stagesFromPlanting(crop, w, dateStr) {
+  const cycle = crop.cycleDays || 120;
+  const shares = {};
+  let total = 0;
+  for (let back = 0; back <= cycle; back += 3) {
+    const p = addDays(dateStr, -back);
+    const m = +p.slice(5, 7) - 1;
+    const wt = w[m] * 3 / MDAYS[m];
+    if (wt <= 0) continue;
+    const k = crop.stages[stageIdxByDap(crop, back)].key;
+    shares[k] = (shares[k] || 0) + wt;
+    total += wt;
+  }
+  return { shares: shares, total: total };
+}
+
 /**
- * คืน { keys:[stageKey], labels:[ชื่อระยะ], basis:'month'|'dap'|'season'|'offseason', note }
+ * คืน { keys:[stageKey], labels:[ชื่อระยะ], shares:{key:สัดส่วน}, main, basis:'month'|'dap'|'season'|'offseason', note }
+ * amp = ชื่ออำเภอ (ใช้น้ำหนักการปลูกของอำเภอถ้ามี)
  */
-export function stagesOn(cropId, dateStr, plantDate) {
+export function stagesOn(cropId, dateStr, plantDate, amp) {
   const crop = CROPS[cropId];
   const season = SEASONS[cropId] || {};
   const m = +dateStr.slice(5, 7);
@@ -72,6 +95,20 @@ export function stagesOn(cropId, dateStr, plantDate) {
     if (dap > (crop.cycleDays || 120) + 15) return { keys: [], labels: [], basis: 'offseason', note: 'เลยระยะเก็บเกี่ยวแล้ว' };
     const k = crop.stages[stageIdxByDap(crop, dap)].key;
     return { keys: [k], labels: names([k]), basis: 'dap', dap: dap, note: 'อายุพืช ' + dap + ' วันหลังปลูก' };
+  }
+
+  const pw = PLANTING[cropId];
+  if (pw) {
+    const w = (amp && pw.amp[amp]) || pw.province;
+    const r = stagesFromPlanting(crop, w, dateStr);
+    if (r.total < 0.03) return { keys: [], labels: [], basis: 'offseason', note: 'ช่วงนี้แทบไม่มีแปลงปลูกในพื้นที่ (นอกฤดูปลูก)' };
+    const keys = Object.keys(r.shares).filter(function (k) { return r.shares[k] / r.total >= 0.02; });
+    keys.sort(function (a, b) { return r.shares[b] - r.shares[a]; });
+    const shares = {};
+    keys.forEach(function (k) { shares[k] = r.shares[k] / r.total; });
+    const labels = names(keys);
+    return { keys: keys, labels: labels, shares: shares, main: keys[0], basis: 'season',
+      note: 'ระยะหลักในพื้นที่ช่วงนี้: ' + labels[0] + (labels.length > 1 ? ' · ระยะอื่นที่พบ: ' + labels.slice(1).join(', ') : '') };
   }
 
   if (!season.windows) return { keys: crop.stages.map(function (s) { return s.key; }), labels: [], basis: 'season', note: 'ไม่มีข้อมูลฤดูปลูก ใช้ทุกระยะ' };

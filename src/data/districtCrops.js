@@ -9,6 +9,7 @@
  *         - อ้อยโรงงาน: อ.หนองไผ่ บึงสามพัน ชนแดน (โครงการอ้อย/ชีวมวล)
  *         - พืชผัก: อ.หล่มสัก (โครงการเกษตรปลอดภัย)
  *  [ไฟล์]  ปฏิทินมะคาเดเมียเขาค้อ (Excel), ปฏิทินทุเรียน อ.วังโป่ง (แอปปฏิทินเพาะปลูก)
+ *  [ทะเบียน] ข้าว ข้าวโพด มันสำปะหลัง ถั่วเขียว อ้อย ใช้เนื้อที่ปลูกจริงจากทะเบียนเกษตรกร (ดู cropsOfDistrict ด้านล่าง)
  *  [ทั่วไป] ลักษณะพื้นที่: ที่ลุ่มลุ่มน้ำป่าสัก = ข้าว, ที่ดอนตอนกลาง-ใต้ = ข้าวโพด มันสำปะหลัง อ้อย ถั่วเขียว,
  *          ที่สูง (เขาค้อ น้ำหนาว) = ไม้ผลเมืองหนาวและผักเมืองหนาว
  *          รายการกลุ่มนี้ควรยืนยันกับสำนักงานเกษตรอำเภอ
@@ -36,4 +37,17 @@ export const DISTRICT_CROP_SRC = {
   durian: { amps: ['วังโป่ง'], src: 'ปฏิทินทุเรียน อ.วังโป่ง' }
 };
 
-export function cropsOfDistrict(amp) { return DISTRICT_CROPS[amp] || []; }
+// พืชไร่และข้าว: ใช้เนื้อที่ปลูกจริงจากทะเบียนเกษตรกร (เฉลี่ยต่อปี) แทนรายการข้างบน
+// อำเภอที่ปลูกเฉลี่ยตั้งแต่ FIELD_MIN_RAI ไร่/ปี ขึ้นไป ถือว่าปลูกพืชนั้น
+import { PLANTED_AREA } from './plantingCalendar.js';
+const FIELD_MIN_RAI = 500;
+const FIELD = { rice: 'rice', ricePhoto: 'rice', maize: 'maize', cassava: 'cassava', mungbean: 'mungbean', sugarcane: 'sugarcane' };
+
+export function cropsOfDistrict(amp) {
+  const base = (DISTRICT_CROPS[amp] || []).filter(function (c) { return !FIELD[c]; });
+  const field = Object.keys(FIELD).filter(function (c) {
+    const a = PLANTED_AREA[FIELD[c]];
+    return a && (a[amp] || 0) >= FIELD_MIN_RAI;
+  });
+  return field.concat(base);
+}

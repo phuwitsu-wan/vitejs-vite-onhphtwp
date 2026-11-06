@@ -2,7 +2,7 @@
 // ต่างจากแอปเดิมตรงที่ประเมินทุกวันตั้งแต่วันนี้ถึงอีก 6 วันข้างหน้า (ข้อมูลพยากรณ์) แล้วสรุปเป็นรายสัปดาห์
 import { CONF_LABEL, TRIGGER_LABEL } from '../data/alertRules.js';
 import { RULES } from '../data/rules.js';
-import { stagesOn, diffDays } from './stages.js';
+import { stagesOn, diffDays, MINOR_SHARE } from './stages.js';
 import { soilBoost } from './soilCore.js';
 
 export const LEVEL_RANK = { none: 0, watch: 1, alert: 2, high: 3 };
@@ -70,9 +70,15 @@ const RULES_BY_CROP = {};
 RULES.forEach(function (r) { (RULES_BY_CROP[r.crop] || (RULES_BY_CROP[r.crop] = [])).push(r); });
 export function rulesFor(cropId) { return RULES_BY_CROP[cropId] || []; }
 
-function stageOk(rule, keys) {
-  if (!rule.stages) return keys.length > 0;
-  return keys.some(function (k) { return rule.stages.indexOf(k) >= 0; });
+// คืนสัดส่วนแปลงที่อยู่ในระยะของกฎ (0 = ไม่เข้า, 1 = ไม่ทราบสัดส่วน/เข้าทั้งหมด)
+function stageShare(rule, st) {
+  const keys = st.keys;
+  if (!keys.length) return 0;
+  if (!rule.stages) return 1;
+  const hit = keys.filter(function (k) { return rule.stages.indexOf(k) >= 0; });
+  if (!hit.length) return 0;
+  if (!st.shares) return 1;
+  return hit.reduce(function (s, k) { return s + (st.shares[k] || 0); }, 0);
 }
 
 /**
@@ -83,14 +89,14 @@ export function assessCrop(cropId, series, today, opts) {
   const o = opts || {};
   const horizon = o.horizon || HORIZON;
   const start = series.findIndex(function (r) { return r.date === today; });
-  const stageToday = stagesOn(cropId, today, o.plantDate);
+  const stageToday = stagesOn(cropId, today, o.plantDate, o.amp);
   if (start < 0) return { level: 'none', items: [], scout: [], stage: stageToday, noData: true };
   const end = Math.min(series.length - 1, start + horizon - 1);
 
   const stageCache = {};
-  function keysOn(i) {
+  function stOn(i) {
     const d = series[i].date;
-    if (!stageCache[d]) stageCache[d] = stagesOn(cropId, d, o.plantDate).keys;
+    if (!stageCache[d]) stageCache[d] = stagesOn(cropId, d, o.plantDate, o.amp);
     return stageCache[d];
   }
 
@@ -98,19 +104,22 @@ export function assessCrop(cropId, series, today, opts) {
   const scout = [];
   rulesFor(cropId).forEach(function (rule) {
     if (rule.type === 'scout') {
-      if (stageOk(rule, stageToday.keys)) scout.push(rule);
+      if (stageShare(rule, stageToday) >= MINOR_SHARE) scout.push(rule);
       return;
     }
     let best = null;
     let first = null;
     let todayLevel = 'none';
     for (let i = start; i <= end; i++) {
-      if (!stageOk(rule, keysOn(i))) continue;
+      const share = stageShare(rule, stOn(i));
+      if (share <= 0) continue;
       const r = levelAt(series, i, rule);
       if (!r) continue;
       if (r.level === 'alert' && rule.conf === 'H') r.level = 'high';
+      if (share < MINOR_SHARE && r.level !== 'watch') { r.level = 'watch'; r.minor = true; }
       if (first === null && LEVEL_RANK[r.level] >= 2) first = series[i].date;
       if (!best || LEVEL_RANK[r.level] > LEVEL_RANK[best.level]) best = Object.assign({ date: series[i].date }, r);
+      if (r.minor && best && best.level === 'watch') best.minor = true;
       if (i === start) todayLevel = r.level;
     }
     if (!best) return;
@@ -127,7 +136,7 @@ export function assessCrop(cropId, series, today, opts) {
       id: rule.id, name: rule.name, kind: rule.kind, level: best.level,
       todayLevel: todayLevel,
       firstAlert: first, daysAhead: first ? diffDays(today, first) : null,
-      detail: best.detail, conf: rule.conf, confLabel: CONF_LABEL[rule.conf], trigger: TRIGGER_LABEL[rule.type],
+      detail: best.detail + (best.minor ? ' · ระยะที่เสี่ยงมีแปลงอยู่น้อยในพื้นที่ช่วงนี้ จึงเตือนแค่ระดับเฝ้าระวัง' : ''), conf: rule.conf, confLabel: CONF_LABEL[rule.conf], trigger: TRIGGER_LABEL[rule.type],
       risk: rule.risk, rule: rule.rule, act: rule.act || [], chem: rule.chem || [], img: rule.img
     });
   });
