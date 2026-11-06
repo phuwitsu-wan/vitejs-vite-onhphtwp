@@ -186,3 +186,19 @@ ul.ov li button { width: 100%; display: flex; justify-content: space-between; ga
   .op-page { margin: 0; box-shadow: none; width: 210mm; min-height: 0; }
   .op-page * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* ───── ดิน ───── */
+.soil-det { margin-top: 10px; }
+.soil-det summary { cursor: pointer; }
+.soilbox { font-size: 0.84rem; }
+.terrain-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: #eee; margin-top: 4px; }
+.terrain-bar span { display: block; height: 100%; }
+.soil-t { width: 100%; border-collapse: collapse; margin-top: 6px; }
+.soil-t td { border-bottom: 1px solid var(--line); padding: 4px 2px; vertical-align: top; }
+.soil-t td:first-child { color: var(--muted); width: 32%; }
+.soil-flags { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0; }
+.sflag { background: #f3eadf; color: #6b4723; border-radius: 99px; padding: 1px 8px; font-size: 0.78rem; }
+.soil-adv { margin: 4px 0; padding-left: 18px; }
+.risk-soil { font-size: 0.78rem; color: #6b4723; }
+i.sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; border: 1px solid rgba(0,0,0,.15); }
+.tabs button:last-child:nth-child(odd) { grid-column: span 2; }

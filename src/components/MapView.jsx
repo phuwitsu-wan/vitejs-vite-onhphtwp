@@ -9,14 +9,14 @@ import { LEVEL_LABEL } from '../lib/risk.js';
 export const LEVEL_COLOR = { none: '#cfe3c8', watch: '#f7d154', alert: '#f08a24', high: '#d43d3d', nodata: '#d9d9d9' };
 
 export default function MapView(props) {
-  const { levels, selected, onSelect, district, showBase, showFlood, labelFor } = props;
+  const { levels, colors, selected, onSelect, district, showBase, showFlood, labelFor } = props;
   const box = useRef(null);
   const map = useRef(null);
   const tLayer = useRef(null);
   const base = useRef(null);
   const floodLayer = useRef(null);
   const cb = useRef({});
-  cb.current = { levels: levels, selected: selected, onSelect: onSelect, labelFor: labelFor, district: district };
+  cb.current = { colors: colors, levels: levels, selected: selected, onSelect: onSelect, labelFor: labelFor, district: district };
 
   function styleFor(f) {
     const c = cb.current;
@@ -25,7 +25,7 @@ export default function MapView(props) {
     const sel = c.selected === id;
     const dim = c.district && f.properties.amp !== c.district;
     return {
-      fillColor: LEVEL_COLOR[lv], fillOpacity: dim ? 0.25 : 0.85,
+      fillColor: c.colors ? (c.colors[id] || '#eee') : LEVEL_COLOR[lv], fillOpacity: dim ? 0.25 : 0.85,
       color: sel ? '#111' : '#ffffff', weight: sel ? 3 : 0.8, opacity: 1
     };
   }
@@ -54,7 +54,9 @@ export default function MapView(props) {
         layer.bindTooltip(function () {
           const c = cb.current;
           const lv = c.levels[f.properties.id] || 'nodata';
-          return '<b>ต.' + f.properties.tam + '</b> อ.' + f.properties.amp + '<br>' + (lv === 'nodata' ? 'ไม่มีข้อมูล' : LEVEL_LABEL[lv]) + (c.labelFor ? c.labelFor(f.properties.id) : '');
+          const head = '<b>ต.' + f.properties.tam + '</b> อ.' + f.properties.amp;
+          if (c.colors) return head + (c.labelFor ? c.labelFor(f.properties.id) : '');
+          return head + '<br>' + (lv === 'nodata' ? 'ไม่มีข้อมูล' : LEVEL_LABEL[lv]) + (c.labelFor ? c.labelFor(f.properties.id) : '');
         }, { sticky: true, direction: 'top', opacity: 0.95 });
       }
     }).addTo(m);
@@ -77,7 +79,7 @@ export default function MapView(props) {
 
   useEffect(function () {
     if (tLayer.current) tLayer.current.setStyle(styleFor);
-  }, [levels, selected, district]);
+  }, [levels, colors, selected, district]);
 
   useEffect(function () {
     const m = map.current;

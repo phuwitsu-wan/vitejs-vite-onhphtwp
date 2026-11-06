@@ -4,6 +4,7 @@ import { CROPS } from './data/crops.js';
 import { SEASONS, CROP_GROUPS } from './data/seasons.js';
 import { cropsOfDistrict } from './data/districtCrops.js';
 import { KIND_ICON } from './data/rules.js';
+import { soilOf, soilFlags, soilColor, soilClass, SOIL_LAYERS, pct } from './lib/soil.js';
 import { loadWeather } from './lib/weather.js';
 import { demoWeather } from './lib/demo.js';
 import { todayStr } from './lib/wxparse.js';
@@ -19,6 +20,8 @@ const BY_ID = {};
 TAMBONS.forEach(function (t) { BY_ID[t.id] = t; });
 const DISTRICTS = Array.from(new Set(TAMBONS.map(function (t) { return t.amp; }))).sort(function (a, b) { return a.localeCompare(b, 'th'); });
 const LEVELS = ['high', 'alert', 'watch', 'none'];
+const FLAGS = {};
+TAMBONS.forEach(function (t) { FLAGS[t.id] = soilFlags(soilOf(t.id)); });
 
 function load(k, d) { try { const v = localStorage.getItem('pbn-' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } }
 function save(k, v) { try { localStorage.setItem('pbn-' + k, JSON.stringify(v)); } catch (e) { /* ignore */ } }
@@ -51,8 +54,9 @@ export default function App() {
   const [wx, setWx] = useState({ status: 'loading' });
   const [geoMsg, setGeoMsg] = useState('');
   const [report, setReport] = useState(false);
+  const [soilLayer, setSoilLayer] = useState(load('soilLayer', 'terrain'));
 
-  useEffect(function () { save('mode', mode); save('crop', cropId); save('sel', sel); save('base', showBase); save('plant', plantDates); }, [mode, cropId, sel, showBase, plantDates]);
+  useEffect(function () { save('mode', mode); save('crop', cropId); save('sel', sel); save('base', showBase); save('plant', plantDates); save('soilLayer', soilLayer); }, [mode, cropId, sel, showBase, plantDates, soilLayer]);
   useEffect(function () { setPest('all'); }, [cropId, mode]);
 
   function fetchWx(force) {
@@ -76,9 +80,10 @@ export default function App() {
     TAMBONS.forEach(function (t) {
       const s = data[t.id];
       if (!s) return;
-      if (mode === 'crop') out[t.id] = assessCrop(cropId, s, today, { plantDate: plantDate });
-      else if (mode === 'area') out[t.id] = assessOverview(cropsOfDistrict(t.amp), s, today);
-      else out[t.id] = assessHazard(mode, s, today);
+      const fl = FLAGS[t.id];
+      if (mode === 'crop') out[t.id] = assessCrop(cropId, s, today, { plantDate: plantDate, soilFlags: fl });
+      else if (mode === 'area') out[t.id] = assessOverview(cropsOfDistrict(t.amp), s, today, { soilFlags: fl });
+      else if (mode === 'flood' || mode === 'dry') out[t.id] = assessHazard(mode, s, today, fl);
     });
     return out;
   }, [data, mode, cropId, plantDate, today]);
@@ -88,6 +93,7 @@ export default function App() {
     if (!results) return lv;
     Object.keys(results).forEach(function (id) {
       const r = results[id];
+      if (!r) return;
       if (mode === 'crop' && pest !== 'all') {
         const it = r.items.find(function (i) { return i.id === pest; });
         lv[id] = it ? it.level : 'none';
@@ -118,7 +124,7 @@ export default function App() {
   }, [results, mode, district]);
 
   const ranking = useMemo(function () {
-    if (!results) return [];
+    if (!results || mode === 'soil') return [];
     return TAMBONS.filter(function (t) { return results[t.id] && (!district || t.amp === district); })
       .map(function (t) {
         const r = results[t.id];
@@ -149,12 +155,23 @@ export default function App() {
     return byAmp;
   }, [results, mode]);
 
+  const soilColors = useMemo(function () {
+    const c = {};
+    TAMBONS.forEach(function (t) { c[t.id] = soilColor(soilLayer, soilOf(t.id)); });
+    return c;
+  }, [soilLayer]);
+
   const crop = CROPS[cropId];
   const season = SEASONS[cropId] || {};
   const selT = sel ? BY_ID[sel] : null;
   const anyStage = results && mode === 'crop' ? results[TAMBONS[0].id] && results[TAMBONS[0].id].stage : null;
 
   function labelFor(id) {
+    if (mode === 'soil') {
+      const so = soilOf(id);
+      if (!so) return '';
+      return '<br>ที่ลุ่ม ' + pct(so.lowland) + ' · ที่ดอน ' + pct(so.upland) + ' · ลาดชัน ' + pct(so.slope) + '<br>ดินเหนียว ' + pct(so.clayey) + ' · ดินทราย ' + pct(so.sandy) + ' · ดินกรด ' + pct(so.acid);
+    }
     if (!results || !results[id]) return '';
     const r = results[id];
     if (mode === 'crop') {
@@ -206,7 +223,7 @@ export default function App() {
         <div className="left">
         <section className="ctrl" aria-label="ตัวเลือก">
           <div className="tabs" role="tablist">
-            {[['crop', 'รายพืช'], ['area', 'ตามพื้นที่'], ['flood', 'ฝนหนัก/น้ำท่วม'], ['dry', 'ฝนทิ้งช่วง/แล้ง']].map(function (t) {
+            {[['crop', 'รายพืช'], ['area', 'ตามพื้นที่'], ['flood', 'ฝนหนัก/น้ำท่วม'], ['dry', 'ฝนทิ้งช่วง/แล้ง'], ['soil', 'ชุดดิน']].map(function (t) {
               return <button key={t[0]} role="tab" aria-selected={mode === t[0]} className={mode === t[0] ? 'on' : ''} onClick={function () { setMode(t[0]); }}>{t[1]}</button>;
             })}
           </div>
@@ -236,6 +253,17 @@ export default function App() {
             </div>
           )}
 
+          {mode === 'soil' && (
+            <div className="card">
+              <label className="fld">แสดงบนแผนที่
+                <select value={soilLayer} onChange={function (e) { setSoilLayer(e.target.value); }}>
+                  {Object.keys(SOIL_LAYERS).map(function (k) { return <option key={k} value={k}>{SOIL_LAYERS[k].label}</option>; })}
+                </select>
+              </label>
+              <div className="muted small">ข้อมูลกลุ่มชุดดิน กรมพัฒนาที่ดิน ซ้อนทับกับขอบเขตตำบลแล้วคิดสัดส่วนตามพื้นที่ ดินที่ลุ่มเพิ่มความเสี่ยงน้ำขังและรากเน่า ดินทราย/ดินตื้นเพิ่มความเสี่ยงขาดน้ำ ปลวก และหนอนด้วงขาว</div>
+            </div>
+          )}
+
           {mode === 'area' && (
             <div className="card">
               <div className="muted small">แสดงความเสี่ยงเฉพาะพืชที่ปลูกในแต่ละอำเภอ (แก้รายการได้ที่ src/data/districtCrops.js)</div>
@@ -256,6 +284,17 @@ export default function App() {
         </section>
 
         <aside className="side">
+          {mode === 'soil' ? (
+            <div className="card">
+              <h3>สรุปดิน{district ? ' อ.' + district : 'ทั้งจังหวัด'}</h3>
+              <ul className="area">
+                {SOIL_LAYERS[soilLayer].classes.map(function (c) {
+                  const n = TAMBONS.filter(function (t) { return (!district || t.amp === district) && soilClass(soilLayer, soilOf(t.id)) === c[0]; }).length;
+                  return <li key={c[0]}><span><i className="sw" style={{ background: c[2] }} />{c[1]}</span><b>{n} ตำบล</b></li>;
+                })}
+              </ul>
+            </div>
+          ) : (<>
           <div className="kpis">
             {LEVELS.map(function (l) {
               return (
@@ -267,6 +306,7 @@ export default function App() {
             })}
           </div>
           <div className="muted small">จำนวนตำบล{district ? 'ใน อ.' + district : 'ทั้งจังหวัด'} จำแนกตามระดับความเสี่ยงสูงสุดใน 7 วัน</div>
+          </>)}
 
           {mode === 'crop' && topPests.length > 0 && (
             <div className="card">
@@ -364,16 +404,18 @@ export default function App() {
 
         <main className="main">
           <div className="map-wrap">
-            <MapView levels={levels} selected={sel} onSelect={setSel} district={district} showBase={showBase} showFlood={showFlood && (mode === 'flood' || mode === 'area')} labelFor={labelFor} />
+            <MapView colors={mode === 'soil' ? soilColors : null} levels={levels} selected={sel} onSelect={setSel} district={district} showBase={showBase} showFlood={showFlood && (mode === 'flood' || mode === 'area')} labelFor={labelFor} />
             {wx.status === 'loading' && <div className="map-loading">กำลังคำนวณความเสี่ยง 117 ตำบล…</div>}
             <div className="map-legend">
-              {LEVELS.map(function (l) { return <span key={l}><i style={{ background: LEVEL_COLOR[l] }} />{LEVEL_LABEL[l]}</span>; })}
+              {mode === 'soil'
+                ? SOIL_LAYERS[soilLayer].classes.map(function (c) { return <span key={c[0]}><i style={{ background: c[2] }} />{c[1]}</span>; })
+                : LEVELS.map(function (l) { return <span key={l}><i style={{ background: LEVEL_COLOR[l] }} />{LEVEL_LABEL[l]}</span>; })}
               <label><input type="checkbox" checked={showBase} onChange={function (e) { setShowBase(e.target.checked); }} /> แผนที่ฐาน</label>
               {mode === 'flood' && <label><input type="checkbox" checked={showFlood} onChange={function (e) { setShowFlood(e.target.checked); }} /> จุดเสี่ยงน้ำท่วม</label>}
             </div>
           </div>
-          {selT && results && (
-            <TambonPanel tambon={selT} mode={mode} cropId={cropId} result={results[sel]} series={data && data[sel]} today={today}
+          {selT && (results || mode === 'soil') && (
+            <TambonPanel tambon={selT} mode={mode} cropId={cropId} result={results ? results[sel] : null} series={data && data[sel]} today={today}
               onClose={function () { setSel(null); }} onPickCrop={function (c) { setCropId(c); setMode('crop'); }}
               plantDate={plantDate} setPlantDate={function (d) { setPlantDates(Object.assign({}, plantDates, { [cropId]: d })); }} />
           )}

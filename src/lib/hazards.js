@@ -8,7 +8,7 @@ function windowSum(series, i, n) {
   return s;
 }
 
-export function assessFlood(series, today) {
+export function assessFlood(series, today, flags) {
   const start = series.findIndex(function (r) { return r.date === today; });
   if (start < 0) return { level: 'none', items: [] };
   const end = Math.min(series.length - 1, start + HORIZON - 1);
@@ -26,17 +26,24 @@ export function assessFlood(series, today) {
   else if (maxDay > 35 || max3 >= 60) level = 'watch';
   // ดินอิ่มน้ำจากฝนสัปดาห์ก่อน ยกระดับขึ้นหนึ่งขั้น
   if (level !== 'none' && level !== 'high' && past7 >= 120) level = level === 'watch' ? 'alert' : 'high';
+  const f = flags || {};
+  const notes = [];
+  if (f.wet && level !== 'none') {
+    if (level !== 'high') level = level === 'watch' ? 'alert' : 'high';
+    notes.push('ตำบลนี้เป็นที่ลุ่มหรือดินเหนียวระบายน้ำช้า น้ำขังนานกว่าปกติ');
+  }
+  if (f.slope && LEVEL_RANK[level] >= 2) notes.push('พื้นที่ลาดชันสูง เสี่ยงน้ำป่าไหลหลากและดินถล่ม');
   const items = level === 'none' ? [] : [{
     id: 'flood', name: 'ฝนหนัก / น้ำท่วมขัง', kind: 'hazard', level: level,
     detail: 'ฝนสูงสุดรายวัน ' + maxDay.toFixed(0) + ' มม. (' + maxDayDate + ') · ฝนสะสม 3 วันสูงสุด ' + max3.toFixed(0) + ' มม. (ถึง ' + max3Date + ') · ฝน 7 วันที่ผ่านมา ' + past7.toFixed(0) + ' มม.',
     risk: 'ฝนหนักกว่า 35 มม./วัน หรือสะสม 3 วันเกิน 60 มม. เสี่ยงน้ำขังที่ลุ่ม ถ้าเกิน 90 มม./วัน หรือ 150 มม./3 วัน เสี่ยงน้ำล้นตลิ่งและน้ำป่า',
     act: ['เปิดร่องระบายน้ำในแปลง ยกร่องพืชไร่ที่ลุ่ม', 'ชะลอการใส่ปุ๋ยและพ่นสารก่อนฝนหนัก', 'ติดตามระดับน้ำแม่น้ำป่าสักและประกาศจากจังหวัด', 'พื้นที่ลาดชันเขาค้อ หล่มเก่า น้ำหนาว ระวังดินโคลนถล่ม'],
-    chem: [], firstAlert: maxDayDate
+    chem: [], firstAlert: maxDayDate, soilNote: notes.join(' · ') || null
   }];
   return { level: level, items: items, maxDay: maxDay, max3: max3, past7: past7 };
 }
 
-export function assessDry(series, today) {
+export function assessDry(series, today, flags) {
   const start = series.findIndex(function (r) { return r.date === today; });
   if (start < 0) return { level: 'none', items: [] };
   const end = Math.min(series.length - 1, start + HORIZON - 1);
@@ -49,10 +56,12 @@ export function assessDry(series, today) {
   }
   let level = 'none';
   let name = 'ฝนทิ้งช่วง / แล้ง';
+  const f = flags || {};
+  const cut = f.droughty ? [7, 12, 17] : [10, 15, 20];   // ดินทราย/ดินตื้นขาดน้ำเร็วกว่า
   if (rainy) {
-    if (maxStreak >= 20) level = 'high';
-    else if (maxStreak >= 15) level = 'alert';
-    else if (maxStreak >= 10) level = 'watch';
+    if (maxStreak >= cut[2]) level = 'high';
+    else if (maxStreak >= cut[1]) level = 'alert';
+    else if (maxStreak >= cut[0]) level = 'watch';
   } else {
     name = 'อากาศร้อนจัดและแล้ง';
     if (hot >= 5) level = 'high';
@@ -64,13 +73,13 @@ export function assessDry(series, today) {
     detail: 'ไม่มีฝน (< 1 มม.) ติดต่อกันสูงสุด ' + maxStreak + ' วัน · วันที่ร้อนเกิน 38°C ' + hot + ' วันในสัปดาห์นี้',
     risk: rainy ? 'ฝนทิ้งช่วงกลางฤดูฝนเกิน 10–15 วัน กระทบข้าวและพืชไร่ระยะวิกฤต (ตั้งท้อง ออกดอก) และเพิ่มการระบาดของเพลี้ยแป้ง ไรแดง เพลี้ยไฟ' : 'อากาศร้อนจัดต่อเนื่องในฤดูแล้ง พืชเครียดน้ำ ไม้ผลดอกและผลอ่อนร่วง',
     act: ['สำรองน้ำและให้น้ำช่วงเช้า/เย็นในระยะวิกฤต', 'คลุมโคนด้วยฟางหรือเศษพืช ลดการระเหย', 'สำรวจเพลี้ยและไรถี่ขึ้นในช่วงแล้ง'],
-    chem: [], firstAlert: today
+    chem: [], firstAlert: today, soilNote: f.droughty ? 'ดินทราย/ดินตื้นอุ้มน้ำน้อย ใช้เกณฑ์ฝนทิ้งช่วงที่สั้นลง (7/12/17 วัน)' : null
   }];
   return { level: level, items: items, maxStreak: maxStreak, hot: hot };
 }
 
-export function assessHazard(kind, series, today) {
-  return kind === 'flood' ? assessFlood(series, today) : assessDry(series, today);
+export function assessHazard(kind, series, today, flags) {
+  return kind === 'flood' ? assessFlood(series, today, flags) : assessDry(series, today, flags);
 }
 
 export function maxLevel(a, b) { return LEVEL_RANK[a] >= LEVEL_RANK[b] ? a : b; }

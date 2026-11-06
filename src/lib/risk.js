@@ -3,6 +3,7 @@
 import { CONF_LABEL, TRIGGER_LABEL } from '../data/alertRules.js';
 import { RULES } from '../data/rules.js';
 import { stagesOn, diffDays } from './stages.js';
+import { soilBoost } from './soilCore.js';
 
 export const LEVEL_RANK = { none: 0, watch: 1, alert: 2, high: 3 };
 export const LEVEL_LABEL = { none: 'ปกติ', watch: 'เฝ้าระวัง', alert: 'แจ้งเตือน', high: 'เสี่ยงสูง' };
@@ -113,7 +114,16 @@ export function assessCrop(cropId, series, today, opts) {
       if (i === start) todayLevel = r.level;
     }
     if (!best) return;
+    // ปรับระดับตามลักษณะดินของตำบล (เพิ่มหนึ่งขั้น)
+    let soilNote = null;
+    const reason = soilBoost(rule.id, o.soilFlags);
+    if (reason) {
+      soilNote = reason;
+      if (best.level === 'watch') best.level = 'alert';
+      else if (best.level === 'alert') best.level = 'high';
+    }
     items.push({
+      soilNote: soilNote,
       id: rule.id, name: rule.name, kind: rule.kind, level: best.level,
       todayLevel: todayLevel,
       firstAlert: first, daysAhead: first ? diffDays(today, first) : null,
@@ -137,8 +147,8 @@ export function assessAll(cropId, wx, today, opts) {
 }
 
 // ภาพรวมทุกพืช: นับจำนวนพืชที่ถึงระดับแจ้งเตือนขึ้นไป
-export function assessOverview(cropIds, series, today) {
-  const per = cropIds.map(function (c) { return { crop: c, res: assessCrop(c, series, today) }; });
+export function assessOverview(cropIds, series, today, opts) {
+  const per = cropIds.map(function (c) { return { crop: c, res: assessCrop(c, series, today, opts) }; });
   const hits = per.filter(function (p) { return LEVEL_RANK[p.res.level] >= 2; });
   const high = per.filter(function (p) { return p.res.level === 'high'; });
   let level = 'none';

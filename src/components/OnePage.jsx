@@ -10,6 +10,7 @@ import { assessFlood, assessDry } from '../lib/hazards.js';
 import { thDate, thDay, thDateTime } from '../lib/format.js';
 import { addDays } from '../lib/stages.js';
 import { LEVEL_COLOR } from './MapView.jsx';
+import { soilOf, soilFlags, groupLabel, pct } from '../lib/soil.js';
 
 const SECTIONS = [
   ['weather', 'สรุปอากาศ 7 วัน'],
@@ -19,10 +20,11 @@ const SECTIONS = [
   ['growth', 'สภาพแวดล้อมต่อการเจริญเติบโต'],
   ['flood', 'ฝนหนัก/น้ำท่วมขัง'],
   ['dry', 'ฝนทิ้งช่วง/แล้ง'],
+  ['soil', 'ข้อมูลชุดดิน'],
   ['priority', 'ตำบลที่ควรลงพื้นที่ก่อน'],
   ['actions', 'คำแนะนำการจัดการ']
 ];
-const DEFAULT_SECTIONS = { weather: true, map: true, pest: true, disease: true, growth: true, flood: true, dry: true, priority: true, actions: true };
+const DEFAULT_SECTIONS = { weather: true, map: true, pest: true, disease: true, growth: true, flood: true, dry: true, soil: true, priority: true, actions: true };
 const ALL = Object.keys(CROPS);
 const DISTRICTS = Array.from(new Set(tambonGeo.features.map(function (f) { return f.properties.amp; }))).sort(function (a, b) { return a.localeCompare(b, 'th'); });
 
@@ -78,7 +80,7 @@ export default function OnePage(props) {
       const agg = {};
       let stage = null;
       tams.forEach(function (t) {
-        const r = assessCrop(cid, data[t.id], today);
+        const r = assessCrop(cid, data[t.id], today, { soilFlags: soilFlags(soilOf(t.id)) });
         if (!stage) stage = r.stage;
         r.items.forEach(function (it) {
           if (kinds.indexOf(it.kind) < 0) return;
@@ -95,8 +97,8 @@ export default function OnePage(props) {
     });
     const flood = {}, dry = {};
     tams.forEach(function (t) {
-      if (sec.flood) { const f = assessFlood(data[t.id], today); flood[t.id] = f; levels[t.id] = maxLv(levels[t.id] || 'none', f.level); score[t.id] = (score[t.id] || 0) + LEVEL_RANK[f.level]; }
-      if (sec.dry) { const d = assessDry(data[t.id], today); dry[t.id] = d; levels[t.id] = maxLv(levels[t.id] || 'none', d.level); score[t.id] = (score[t.id] || 0) + LEVEL_RANK[d.level]; }
+      if (sec.flood) { const f = assessFlood(data[t.id], today, soilFlags(soilOf(t.id))); flood[t.id] = f; levels[t.id] = maxLv(levels[t.id] || 'none', f.level); score[t.id] = (score[t.id] || 0) + LEVEL_RANK[f.level]; }
+      if (sec.dry) { const d = assessDry(data[t.id], today, soilFlags(soilOf(t.id))); dry[t.id] = d; levels[t.id] = maxLv(levels[t.id] || 'none', d.level); score[t.id] = (score[t.id] || 0) + LEVEL_RANK[d.level]; }
     });
     // อากาศเฉลี่ยของพื้นที่
     const days = [];
@@ -122,7 +124,21 @@ export default function OnePage(props) {
       Object.keys(obj).forEach(function (id) { const l = obj[id].level; if (c[l] !== undefined) c[l]++; if (LEVEL_RANK[l] >= 2) amps[tams.find(function (t) { return t.id === id; }).amp] = 1; });
       return { c: c, amps: Object.keys(amps) };
     }
-    return { tams: tams, levels: levels, perCrop: perCrop, days: days, wetT: wetT, wetV: wetV, prio: prio, flood: hz(flood), dry: hz(dry), score: score };
+    // ดินถ่วงน้ำหนักตามพื้นที่ตำบล
+    const sw = { lowland: 0, upland: 0, slope: 0, sandy: 0, clayey: 0, acid: 0, alkaline: 0, lowfert: 0 };
+    const grp = {};
+    let aw = 0;
+    tams.forEach(function (t) {
+      const so = soilOf(t.id);
+      if (!so || !so.cover) return;
+      const a = t.areaKm2 || 1;
+      aw += a;
+      Object.keys(sw).forEach(function (k) { sw[k] += (so[k] || 0) * a; });
+      so.groups.forEach(function (g) { grp[g[0]] = (grp[g[0]] || 0) + g[1] * a; });
+    });
+    Object.keys(sw).forEach(function (k) { sw[k] = aw ? sw[k] / aw : 0; });
+    const topGroups = Object.keys(grp).map(function (k) { return [k, grp[k] / (aw || 1)]; }).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 5);
+    return { soil: sw, topGroups: topGroups, tams: tams, levels: levels, perCrop: perCrop, days: days, wetT: wetT, wetV: wetV, prio: prio, flood: hz(flood), dry: hz(dry), score: score };
   }, [data, feats, today, selCrops.join(','), kinds.join(','), sec.flood, sec.dry]);
 
   const scope = district ? 'อ.' + district : 'ทั้งจังหวัด (11 อำเภอ 117 ตำบล)';
@@ -248,6 +264,16 @@ export default function OnePage(props) {
                   </table>
                 </section>
               )}
+              {sec.soil && (
+                <section>
+                  <h3>ข้อมูลชุดดิน (กรมพัฒนาที่ดิน)</h3>
+                  <table className="op-t">
+                    <thead><tr><th>ที่ลุ่ม</th><th>ที่ดอน</th><th>ลาดชัน</th><th>ดินเหนียว</th><th>ดินทราย</th><th>ดินกรด</th><th>ดินด่าง</th><th>อุดมสมบูรณ์ต่ำ</th></tr></thead>
+                    <tbody><tr>{['lowland', 'upland', 'slope', 'clayey', 'sandy', 'acid', 'alkaline', 'lowfert'].map(function (k) { return <td key={k}>{pct(rep.soil[k])}</td>; })}</tr></tbody>
+                  </table>
+                  <div className="op-note">กลุ่มชุดดินหลัก: {rep.topGroups.map(function (g) { return groupLabel(g[0]) + ' ' + pct(g[1]); }).join(' · ')}</div>
+                </section>
+              )}
               {sec.priority && (
                 <section>
                   <h3>ตำบลที่ควรลงพื้นที่ก่อน</h3>
@@ -286,7 +312,7 @@ export default function OnePage(props) {
           )}
 
           <footer className="op-foot">
-            ที่มา: พยากรณ์อากาศ Open-Meteo (CC BY 4.0) ณ จุดกึ่งกลางตำบล · เกณฑ์โรค แมลง และสภาพแวดล้อม จากปฏิทินเพาะปลูกและปฏิทินศัตรูพืชเท่าทันภูมิอากาศ · ฤดูปลูกจากแผนพัฒนาการเกษตรและสหกรณ์จังหวัดเพชรบูรณ์ (พ.ศ. 2571–2575)
+            ที่มา: พยากรณ์อากาศ Open-Meteo (CC BY 4.0) ณ จุดกึ่งกลางตำบล · เกณฑ์โรค แมลง และสภาพแวดล้อม จากปฏิทินเพาะปลูกและปฏิทินศัตรูพืชเท่าทันภูมิอากาศ · ฤดูปลูกจากแผนพัฒนาการเกษตรและสหกรณ์จังหวัดเพชรบูรณ์ (พ.ศ. 2571–2575) · กลุ่มชุดดิน กรมพัฒนาที่ดิน
             · ผลประเมินเป็นการเตือนล่วงหน้าเพื่อให้สำรวจแปลง ใช้สารเคมีเมื่อสำรวจพบถึงเกณฑ์เท่านั้น
           </footer>
         </article>

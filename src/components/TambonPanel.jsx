@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { CROPS } from '../data/crops.js';
 import { SEASONS } from '../data/seasons.js';
 import { KIND_LABEL } from '../data/rules.js';
+import { soilOf, soilFlags, soilAdvice, groupLabel, TEX_NAME, FER_NAME, FLAG_LABEL, pct } from '../lib/soil.js';
 import { LEVEL_LABEL } from '../lib/risk.js';
 import { LEVEL_COLOR } from './MapView.jsx';
 import { thDate, thDay } from '../lib/format.js';
@@ -27,6 +28,7 @@ function RiskCard({ it, today }) {
       </button>
       <div className="risk-when">{when(it, today)}</div>
       {it.detail && <div className="risk-detail">{it.detail}</div>}
+      {it.soilNote && <div className="risk-soil">ดิน: {it.soilNote}{it.kind !== 'hazard' ? ' (ปรับระดับขึ้นหนึ่งขั้น)' : ''}</div>}
       {open && (
         <div className="risk-body">
           {it.risk && <p><b>สภาพที่เอื้อต่อการระบาด:</b> {it.risk}</p>}
@@ -39,6 +41,35 @@ function RiskCard({ it, today }) {
       )}
       {!open && <button className="more" onClick={function () { setOpen(true); }}>วิธีจัดการ</button>}
     </li>
+  );
+}
+
+function SoilBox({ id, cropId, mode }) {
+  const so = soilOf(id);
+  if (!so || !so.cover) return null;
+  const fl = soilFlags(so);
+  const flags = Object.keys(fl).filter(function (k) { return fl[k] && k !== 'sandy' && k !== 'shallow'; });
+  const advice = mode === 'crop' ? soilAdvice(cropId, fl) : [];
+  return (
+    <div className="soilbox">
+      <div className="terrain-bar" aria-label="สัดส่วนลักษณะพื้นที่">
+        <span style={{ width: pct(so.lowland), background: '#6fa8dc' }} />
+        <span style={{ width: pct(so.upland), background: '#e3c16f' }} />
+        <span style={{ width: pct(so.slope), background: '#93c47d' }} />
+      </div>
+      <div className="legend-mini">ที่ลุ่ม {pct(so.lowland)} · ที่ดอน {pct(so.upland)} · ลาดชันเชิงซ้อน {pct(so.slope)}{so.water > 0.02 ? ' · แหล่งน้ำ ' + pct(so.water) : ''}</div>
+      <table className="soil-t">
+        <tbody>
+          <tr><td>กลุ่มชุดดินหลัก</td><td>{so.groups.slice(0, 3).map(function (g) { return <div key={g[0]}>{groupLabel(g[0])} <span className="muted">{pct(g[1])}</span></div>; })}</td></tr>
+          {so.tex.length > 0 && <tr><td>เนื้อดินบน</td><td>{so.tex.map(function (t) { return (TEX_NAME[t[0]] || t[0]) + ' ' + pct(t[1]); }).join(' · ')}</td></tr>}
+          {so.ph.length > 0 && <tr><td>pH ดินบน</td><td>{so.ph.map(function (t) { return t[0] + ' (' + pct(t[1]) + ')'; }).join(' · ')}</td></tr>}
+          {so.fer.length > 0 && <tr><td>ความอุดมสมบูรณ์</td><td>{so.fer.map(function (t) { return (FER_NAME[t[0]] || t[0]) + ' ' + pct(t[1]); }).join(' · ')}</td></tr>}
+        </tbody>
+      </table>
+      {flags.length > 0 && <div className="soil-flags">{flags.map(function (k) { return <span key={k} className="sflag">{FLAG_LABEL[k]}</span>; })}</div>}
+      {advice.length > 0 && <ul className="soil-adv">{advice.map(function (a, i) { return <li key={i}>{a}</li>; })}</ul>}
+      <div className="legend-mini">ที่มา: กลุ่มชุดดินจังหวัดเพชรบูรณ์ กรมพัฒนาที่ดิน (สัดส่วนตามพื้นที่ในตำบล; ส่วนที่เป็นพื้นที่ลาดชันเชิงซ้อนไม่มีข้อมูลเนื้อดินและ pH)</div>
+    </div>
   );
 }
 
@@ -79,6 +110,11 @@ export default function TambonPanel(props) {
       </div>
 
       {series && <><h3>พยากรณ์อากาศ 7 วัน</h3><WeatherStrip series={series} today={today} /><div className="legend-mini">อุณหภูมิสูงสุด/ต่ำสุด · ฝน · ความชื้นเฉลี่ย</div></>}
+
+      <details className="soil-det" open={mode === 'soil'}>
+        <summary><h3 style={{ display: 'inline' }}>ข้อมูลดิน</h3></summary>
+        <SoilBox id={tambon.id} cropId={cropId} mode={mode} />
+      </details>
 
       {mode === 'crop' && result && (
         <>
